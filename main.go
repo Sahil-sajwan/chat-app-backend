@@ -8,7 +8,7 @@ import (
 )
 
 func main() {
-
+	gin.SetMode(gin.ReleaseMode)
 	r := gin.Default()
 	r.Use(middleware.OptionsMiddleware())
 	r.POST("/create-room/:name", handler.CreateRoomHandler)
