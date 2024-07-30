@@ -2,7 +2,6 @@ package handler
 
 import (
 	"chatapp/model"
-	"log"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -97,11 +96,9 @@ func HandleMessagesByRoom() {
 
 		select {
 		case msg := <-register:
-			log.Println("from register")
 			for client := range clientsroom[msg.Room] {
 				err := client.Conn.WriteJSON(msg)
 				if err != nil {
-					log.Println("register error", err.Error())
 					return
 				}
 
@@ -112,7 +109,6 @@ func HandleMessagesByRoom() {
 			for client := range clientsroom[msg.Room] {
 				err := client.Conn.WriteJSON(msg)
 				if err != nil {
-					log.Println("unregister error", err.Error())
 					return
 				}
 
@@ -122,7 +118,6 @@ func HandleMessagesByRoom() {
 			for client := range clientsroom[msg.Room] {
 				err := client.Conn.WriteJSON(msg)
 				if err != nil {
-					log.Println("message send error", err.Error())
 					return
 				}
 

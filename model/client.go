@@ -1,8 +1,6 @@
 package model
 
 import (
-	"log"
-
 	"github.com/gorilla/websocket"
 )
 
@@ -31,10 +29,7 @@ func (client *Client) ReadMessageByRoom(name string, rname string, clientsroom m
 	for {
 		_, res, err := client.Conn.ReadMessage()
 		if err != nil {
-			log.Println("message from readMessage", err.Error())
-			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway) {
-				log.Printf("error: %v", err)
-			}
+
 			return
 
 		}
