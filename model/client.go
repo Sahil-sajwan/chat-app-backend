@@ -9,7 +9,7 @@ type Client struct {
 	Username string
 }
 
-func (client *Client) ReadMessageByRoom(name string, rname string, clientsroom map[string]map[*Client]bool, rooms map[string]string, broadcast chan Message, register chan Message, unregister chan Message) {
+func (client *Client) ReadMessageByRoom(name string, rname string, broadcast chan Message, unregister chan Message, cleanup func()) {
 	defer func() {
 		msg := Message{
 			Type:     2,
@@ -18,11 +18,7 @@ func (client *Client) ReadMessageByRoom(name string, rname string, clientsroom m
 			Room:     rname,
 		}
 		client.Conn.Close()
-		delete(clientsroom[rname], client)
-		if len(clientsroom[rname]) == 0 {
-			delete(clientsroom, rname)
-			delete(rooms, rname)
-		}
+		cleanup()
 		unregister <- msg
 
 	}()
