@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"chatapp/db"
 	"chatapp/model"
 	"crypto/rand"
 	"encoding/hex"
@@ -37,7 +38,6 @@ type joinToken struct {
 }
 
 func CreateRoomHandler(c *gin.Context) {
-
 	var room model.Room
 	c.Bind(&room)
 	rname := room.Rname
@@ -52,7 +52,6 @@ func CreateRoomHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"message": "room created",
 	})
-
 }
 
 func JoinRoomAuthHandler(c *gin.Context) {
@@ -94,7 +93,6 @@ func JoinRoomAuthHandler(c *gin.Context) {
 		"token":      token,
 		"expires_in": int(joinTokenTTL.Seconds()),
 	})
-
 }
 
 func JoinRoomHandler(c *gin.Context) {
@@ -118,7 +116,6 @@ func JoinRoomHandler(c *gin.Context) {
 
 	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
-
 		return
 	}
 
@@ -128,6 +125,13 @@ func JoinRoomHandler(c *gin.Context) {
 	}
 
 	addClientToRoom(rname, client)
+
+	// Stream past chat history to the newly connected user
+	if history, err := db.GetRoomHistory(rname, 50); err == nil {
+		for _, hMsg := range history {
+			_ = client.Conn.WriteJSON(hMsg)
+		}
+	}
 
 	msg := model.Message{
 		Type:     1,
@@ -149,28 +153,67 @@ func createRoom(name string, password string) bool {
 		return false
 	}
 
+	// Check MongoDB
+	if existing, _ := db.GetRoomByName(name); existing != nil {
+		rooms[name] = existing.Rpass
+		return false
+	}
+
+	newRoom := model.Room{
+		Rname:     name,
+		Rpass:     password,
+		CreatedAt: time.Now(),
+	}
+
+	if err := db.CreateRoom(newRoom); err != nil {
+		return false
+	}
+
 	rooms[name] = password
 	return true
 }
 
 func validateRoomPassword(name string, password string) (bool, bool) {
 	roomMu.RLock()
-	defer roomMu.RUnlock()
-
 	roomPassword, ok := rooms[name]
-	if !ok {
+	roomMu.RUnlock()
+
+	if ok {
+		return true, password == roomPassword
+	}
+
+	// Fallback query from MongoDB
+	room, err := db.GetRoomByName(name)
+	if err != nil || room == nil {
 		return false, false
 	}
 
-	return true, password == roomPassword
+	roomMu.Lock()
+	rooms[name] = room.Rpass
+	roomMu.Unlock()
+
+	return true, password == room.Rpass
 }
 
 func roomExists(name string) bool {
 	roomMu.RLock()
-	defer roomMu.RUnlock()
-
 	_, ok := rooms[name]
-	return ok
+	roomMu.RUnlock()
+
+	if ok {
+		return true
+	}
+
+	room, err := db.GetRoomByName(name)
+	if err != nil || room == nil {
+		return false
+	}
+
+	roomMu.Lock()
+	rooms[name] = room.Rpass
+	roomMu.Unlock()
+
+	return true
 }
 
 func addClientToRoom(room string, client *model.Client) {
@@ -236,34 +279,32 @@ func consumeJoinToken(token string, room string) bool {
 
 func HandleMessagesByRoom() {
 	for {
-
 		select {
 		case msg := <-register:
+			go db.SaveMessage(msg)
 			for _, client := range clientsInRoom(msg.Room) {
 				err := client.Conn.WriteJSON(msg)
 				if err != nil {
 					continue
 				}
-
 			}
 
 		case msg := <-unregister:
-
+			go db.SaveMessage(msg)
 			for _, client := range clientsInRoom(msg.Room) {
 				err := client.Conn.WriteJSON(msg)
 				if err != nil {
 					continue
 				}
-
 			}
 
 		case msg := <-broadcast:
+			go db.SaveMessage(msg)
 			for _, client := range clientsInRoom(msg.Room) {
 				err := client.Conn.WriteJSON(msg)
 				if err != nil {
 					continue
 				}
-
 			}
 		}
 	}

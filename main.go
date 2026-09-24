@@ -2,12 +2,18 @@ package main
 
 import (
 	handler "chatapp/Handler"
+	"chatapp/db"
 	"chatapp/middleware"
+	"log"
 
 	"github.com/gin-gonic/gin"
 )
 
 func main() {
+	if err := db.InitMongo(); err != nil {
+		log.Printf("MongoDB initialization notice: %v", err)
+	}
+
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.Default()
 	r.Use(middleware.OptionsMiddleware())
@@ -17,5 +23,4 @@ func main() {
 	go handler.HandleMessagesByRoom()
 
 	r.Run(":8080")
-
 }
