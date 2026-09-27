@@ -11,16 +11,8 @@ type Client struct {
 
 func (client *Client) ReadMessageByRoom(name string, rname string, broadcast chan Message, unregister chan Message, cleanup func()) {
 	defer func() {
-		msg := Message{
-			Type:     2,
-			Username: name,
-			Message:  "left",
-			Room:     rname,
-		}
 		client.Conn.Close()
 		cleanup()
-		unregister <- msg
-
 	}()
 	for {
 		_, res, err := client.Conn.ReadMessage()

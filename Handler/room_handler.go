@@ -29,8 +29,11 @@ var register = make(chan model.Message)
 var unregister = make(chan model.Message)
 var joinTokens = make(map[string]joinToken)
 var joinTokensMu sync.Mutex
+var disconnectTimers = make(map[string]*time.Timer)
+var disconnectMu sync.Mutex
 
 const joinTokenTTL = 5 * time.Minute
+const disconnectGracePeriod = 4 * time.Second
 
 type joinToken struct {
 	Room      string
@@ -114,6 +117,16 @@ func JoinRoomHandler(c *gin.Context) {
 		return
 	}
 
+	key := rname + ":" + name
+
+	disconnectMu.Lock()
+	timer, isReconnecting := disconnectTimers[key]
+	if isReconnecting && timer != nil {
+		timer.Stop()
+		delete(disconnectTimers, key)
+	}
+	disconnectMu.Unlock()
+
 	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
 		return
@@ -133,15 +146,37 @@ func JoinRoomHandler(c *gin.Context) {
 		}
 	}
 
-	msg := model.Message{
-		Type:     1,
-		Message:  "joined",
-		Username: name,
-		Room:     rname,
+	if !isReconnecting {
+		msg := model.Message{
+			Type:     1,
+			Message:  "joined",
+			Username: name,
+			Room:     rname,
+		}
+		register <- msg
 	}
-	register <- msg
+
 	client.ReadMessageByRoom(name, rname, broadcast, unregister, func() {
-		removeClientFromRoom(rname, client)
+		disconnectMu.Lock()
+		if existing, ok := disconnectTimers[key]; ok && existing != nil {
+			existing.Stop()
+		}
+
+		disconnectTimers[key] = time.AfterFunc(disconnectGracePeriod, func() {
+			disconnectMu.Lock()
+			delete(disconnectTimers, key)
+			disconnectMu.Unlock()
+
+			removeClientFromRoom(rname, client)
+			msg := model.Message{
+				Type:     2,
+				Username: name,
+				Message:  "left",
+				Room:     rname,
+			}
+			unregister <- msg
+		})
+		disconnectMu.Unlock()
 	})
 }
 
